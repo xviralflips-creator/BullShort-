@@ -4,18 +4,39 @@ import { Hero } from './components/Hero';
 import { PromptBar } from './components/PromptBar';
 import { VideoGallery } from './components/VideoGallery';
 import { Generation, GenerationType, GenerationStatus, GenerationConfig } from './types';
-import { enhancePrompt, generateImage, generateVideo, fileToBase64 } from './services/geminiService';
+import { enhancePrompt, generateImage, generateVideo, fileToBase64, checkAndPromptKey } from './services/geminiService';
+import { Trash2 } from 'lucide-react';
 
 const App: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [generations, setGenerations] = useState<Generation[]>([]);
 
-  // Load "mock" history on mount
+  // Load history from localStorage
   useEffect(() => {
-    // In a real app, this fetches from Firestore
-    // Here we can initialize with empty or some fake data if desired
+    const saved = localStorage.getItem('hailuo_generations');
+    if (saved) {
+      try {
+        setGenerations(JSON.parse(saved));
+      } catch (e) {
+        console.error("Failed to parse saved generations");
+      }
+    }
   }, []);
+
+  // Save history to localStorage
+  useEffect(() => {
+    if (generations.length > 0) {
+      localStorage.setItem('hailuo_generations', JSON.stringify(generations));
+    }
+  }, [generations]);
+
+  const clearHistory = () => {
+    if (confirm("Are you sure you want to clear your generation history?")) {
+      setGenerations([]);
+      localStorage.removeItem('hailuo_generations');
+    }
+  };
 
   const handleGenerate = async (
     prompt: string, 
@@ -23,10 +44,14 @@ const App: React.FC = () => {
     config: GenerationConfig, 
     imageFile?: File
   ) => {
+    // For Veo models, we must ensure an API key is selected
+    if (type !== GenerationType.TEXT_TO_IMAGE) {
+      await checkAndPromptKey();
+    }
+
     setIsGenerating(true);
     const newId = Date.now().toString();
     
-    // Optimistic UI update
     const newGen: Generation = {
       id: newId,
       type,
@@ -39,56 +64,48 @@ const App: React.FC = () => {
     setGenerations(prev => [newGen, ...prev]);
 
     try {
-      // 1. Enhance Prompt (only if text is present)
       let finalPrompt = prompt;
       if (prompt) {
         setStatusMessage('Enhancing prompt with Gemini...');
         const enhanced = await enhancePrompt(prompt);
         finalPrompt = enhanced;
         
-        // Update local state with enhanced prompt
         setGenerations(prev => prev.map(g => 
             g.id === newId ? { ...g, enhancedPrompt: finalPrompt, status: GenerationStatus.PROCESSING } : g
         ));
       }
 
-      setStatusMessage('Generating content...');
       let mediaUrl = '';
-
       if (type === GenerationType.TEXT_TO_IMAGE) {
+        setStatusMessage('Generating image with Imagen 3...');
         mediaUrl = await generateImage(finalPrompt, config);
-      } else if (type === GenerationType.TEXT_TO_VIDEO || type === GenerationType.IMAGE_TO_VIDEO) {
-        
+      } else {
         let imageBase64;
         let imageMime;
         
         if (imageFile) {
-            // Strip data:image/xyz;base64, prefix for the API
             const fullBase64 = await fileToBase64(imageFile);
             const matches = fullBase64.match(/^data:(.+);base64,(.+)$/);
             if (matches) {
                 imageMime = matches[1];
                 imageBase64 = matches[2];
-            } else {
-                throw new Error("Invalid image file processing");
             }
         }
 
-        setStatusMessage('Starting video generation (this takes ~1 min)...');
+        setStatusMessage('Starting video generation (usually 60-90s)...');
         mediaUrl = await generateVideo(finalPrompt, config, imageBase64, imageMime);
       }
 
-      // 2. Success Update
       setGenerations(prev => prev.map(g => 
         g.id === newId ? { ...g, status: GenerationStatus.COMPLETED, mediaUrl } : g
       ));
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Generation failed:", error);
       setGenerations(prev => prev.map(g => 
         g.id === newId ? { ...g, status: GenerationStatus.FAILED } : g
       ));
-      alert(`Generation failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+      alert(`Generation failed: ${error.message || "Unknown error"}`);
     } finally {
       setIsGenerating(false);
       setStatusMessage('');
@@ -118,9 +135,20 @@ const App: React.FC = () => {
         />
 
         <div className="z-10 mt-10">
-          <div className="max-w-7xl mx-auto px-4 mb-6 flex items-center gap-4">
-             <h2 className="text-2xl font-display font-bold text-white">Latest Creations</h2>
-             <div className="h-[1px] flex-1 bg-white/10"></div>
+          <div className="max-w-7xl mx-auto px-4 mb-6 flex items-center justify-between">
+             <div className="flex items-center gap-4 flex-1">
+                <h2 className="text-2xl font-display font-bold text-white whitespace-nowrap">Latest Creations</h2>
+                <div className="h-[1px] flex-1 bg-white/10"></div>
+             </div>
+             {generations.length > 0 && (
+               <button 
+                onClick={clearHistory}
+                className="ml-4 text-zinc-500 hover:text-red-400 transition-colors flex items-center gap-2 text-sm"
+               >
+                 <Trash2 className="w-4 h-4" />
+                 Clear All
+               </button>
+             )}
           </div>
           <VideoGallery generations={generations} />
         </div>
