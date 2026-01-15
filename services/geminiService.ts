@@ -2,17 +2,23 @@ import { GoogleGenAI } from "@google/genai";
 import { GenerationType, GenerationConfig } from "../types";
 
 // Helper to ensure API Key selection for Veo models
+// Robust check: works in IDX (window.aistudio) and Vercel (process.env.API_KEY)
 export async function checkAndPromptKey() {
   // @ts-ignore
-  if (window.aistudio && window.aistudio.hasSelectedApiKey) {
+  if (typeof window !== 'undefined' && window.aistudio && window.aistudio.hasSelectedApiKey) {
     // @ts-ignore
     const hasKey = await window.aistudio.hasSelectedApiKey();
     if (!hasKey) {
       // @ts-ignore
       await window.aistudio.openSelectKey();
-      return true; // Assume success after opening dialog as per instructions
+      return true; 
     }
     return true;
+  }
+  // If we are not in the Google IDX environment, we rely on the API key being
+  // provided via process.env.API_KEY (configured in Vite config / Vercel Env Vars).
+  if (!process.env.API_KEY) {
+     console.warn("No API Key found in environment variables.");
   }
   return true;
 }
@@ -105,14 +111,16 @@ export const generateVideo = async (
     if (!downloadLink) throw new Error("Video generation failed: No URI returned");
 
     // Fetch the video data to create a local blob URL
+    // We append the key to the download link fetch as required by the API
     const response = await fetch(`${downloadLink}&key=${process.env.API_KEY}`);
     const blob = await response.blob();
     return URL.createObjectURL(blob);
 
   } catch (error: any) {
+    // Graceful handling if Key selection is needed (only in IDX)
     if (error.message?.includes("Requested entity was not found")) {
       // @ts-ignore
-      if (window.aistudio?.openSelectKey) {
+      if (typeof window !== 'undefined' && window.aistudio?.openSelectKey) {
         // @ts-ignore
         await window.aistudio.openSelectKey();
       }

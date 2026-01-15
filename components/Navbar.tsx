@@ -1,7 +1,16 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Sparkles, Key, ExternalLink } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
+  const [isIdxEnvironment, setIsIdxEnvironment] = useState(false);
+
+  useEffect(() => {
+    // @ts-ignore
+    if (typeof window !== 'undefined' && window.aistudio) {
+      setIsIdxEnvironment(true);
+    }
+  }, []);
+
   const handleOpenKey = async () => {
     // @ts-ignore
     if (window.aistudio?.openSelectKey) {
@@ -31,13 +40,15 @@ export const Navbar: React.FC = () => {
             <ExternalLink className="w-3 h-3" />
           </a>
           
-          <button 
-            onClick={handleOpenKey}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-sm text-zinc-300 hover:bg-white/10 transition-colors"
-          >
-            <Key className="w-4 h-4 text-primary" />
-            <span>Select API Key</span>
-          </button>
+          {isIdxEnvironment && (
+            <button 
+              onClick={handleOpenKey}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-sm text-zinc-300 hover:bg-white/10 transition-colors"
+            >
+              <Key className="w-4 h-4 text-primary" />
+              <span>Select API Key</span>
+            </button>
+          )}
         </div>
       </div>
     </nav>
